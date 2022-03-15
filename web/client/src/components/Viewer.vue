@@ -338,6 +338,9 @@ export default {
       this.addSet('StatefulSet', this.apiData.statefulsets, TYPE_REPLICA_SET)
       this.addSet('DaemonSet', this.apiData.daemonsets, TYPE_DAEMON_SET)
 
+      let addedPvcs = new Set()
+      let addedPvs = new Set()
+
       // Add pods
       for (let pod of this.apiData.pods) {
         if (!this.filterShowNode(pod)) {
@@ -394,8 +397,16 @@ export default {
           // Show PVCs
           if (vol.persistentVolumeClaim) {
             let pvc = this.apiData.persistentvolumeclaims.find((p) => p.metadata.name == vol.persistentVolumeClaim.claimName)
+            addedPvcs.add(pvc.metadata.name)
             this.addNode(pvc, 'PersistentVolumeClaim')
             this.addLink(`PersistentVolumeClaim_${vol.persistentVolumeClaim.claimName}`, `Pod_${pod.metadata.name}`)
+
+            if (pvc.spec.volumeName) {
+              let pv = this.apiData.persistentvolumes.find((p) => p.metadata.name == pvc.spec.volumeName)
+              addedPvs.add(pv.metadata.name)
+              this.addNode(pv, 'PersistentVolume')
+              this.addLink(`PersistentVolume_${pvc.spec.volumeName}`, `PersistentVolumeClaim_${vol.persistentVolumeClaim.claimName}`)
+            }
           }
 
           // Show ConfigMap mounted as a volume
@@ -430,6 +441,34 @@ export default {
           // Link pod up to the owning set/group
           this.addLink(`Pod_${pod.metadata.name}`, `${ownerRef.kind}_${ownerRef.name}`)
         }
+      }
+
+      // Add PVCs that are orphaned
+      for (let pvc of this.apiData.persistentvolumeclaims) {
+        if (!this.filterShowNode(pvc)) {
+          continue
+        }
+        if (addedPvcs.has(pvc.metadata.name)) {
+          continue
+        }
+        this.addNode(pvc, 'PersistentVolumeClaim')        
+        if (pvc.spec.volumeName) {
+          let pv = this.apiData.persistentvolumes.find((p) => p.metadata.name == pvc.spec.volumeName)
+          addedPvs.add(pv.metadata.name)
+          this.addNode(pv, 'PersistentVolume')
+          this.addLink(`PersistentVolume_${pv.spec.volumeName}`, `PersistentVolumeClaim_${pvc.metadata.name}`)
+        }
+      }
+
+      // Add PVs that are orphaned
+      for (let pv of this.apiData.persistentvolumes) {
+        if (!this.filterShowNode(pv)) {
+          continue
+        }
+        if (addedPvs.has(pv.metadata.name)) {
+          continue
+        }
+        this.addNode(pv, 'PersistentVolume')
       }
 
       // Find all services, we pull in info from the endpoint with matching name
@@ -563,6 +602,9 @@ export default {
         }
         if (type == 'PersistentVolumeClaim') {
           icon = 'pvc'
+        }
+        if (type == 'PersistentVolume') {
+          icon = 'vol'
         }
         if (type == 'ConfigMap') {
           icon = 'cm'
